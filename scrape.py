@@ -63,7 +63,6 @@ def login():
 
     if login_response.ok:
         print("Login successful")
-        print(SESSION.cookies.get_dict())
 
 def switch_child(child_data):
     child_name = child_data['name']
@@ -166,6 +165,7 @@ def main():
 
     # Preview or send
     if os.getenv('PREVIEW_ONLY') == 'true':
+        print("Preview Only mode enabled - not sending any email"
         print(summary)
     else:
         for email in EMAIL_TO:

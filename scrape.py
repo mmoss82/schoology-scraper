@@ -28,6 +28,7 @@ SCHOOLOGY_USER = os.getenv('SCHOOLOGY_USER')
 SCHOOLOGY_PASS = os.getenv('SCHOOLOGY_PASS')
 CHILDREN = json.loads(os.getenv('CHILDREN', '[]'))
 EMAIL_TO = json.loads(os.getenv('EMAIL_TO', '[]'))
+FORM_BUILD_ID = os.getenv('FORM_BUILD_ID')
 
 URL='https://app.schoology.com'
 SESSION = requests.Session()
@@ -55,7 +56,7 @@ def login():
         'pass': SCHOOLOGY_PASS,
         'school': '',
         'school_nid': '',
-        'form_build_id': 'df73410-5f4QyA7ldmjQ0xjznEmKINTNl77pSQfm_z0fBVi2idI',
+        'form_build_id': FORM_BUILD_ID,
         'form_id': 's_user_login_form'
     }
 
@@ -114,8 +115,9 @@ def get_calendar(start, end):
     return parsed
 
 
-def format_multi_child_summary(child_summaries):
-    header = ["📅 **Weekly Schoology Summary**\n"]
+def format_multi_child_summary(mode, child_summaries):
+    summary_fmt = mode.capitalize()
+    header = [f"📅 **{summary_fmt} Schoology Summary**\n"]
     details = ["\n📝 **Full Assignment Details**\n"]
 
     for child_name, events in child_summaries.items():
@@ -132,9 +134,10 @@ def format_multi_child_summary(child_summaries):
 
     return "\n".join(header + details)
 
-def send_email(body, email):
+def send_email(body, email, mode):
     msg = MIMEText(body)
-    msg['Subject'] = f'Weekly Schoology Summary'
+    mode_fmt = mode.capitalize()
+    msg['Subject'] = f'{mode_fmt} Schoology Summary'
     msg['From'] = EMAIL_USER
     msg['To'] = email
 
@@ -161,15 +164,15 @@ def main():
         events = get_calendar(start, end)
         child_summaries[child_name] = events
 
-    summary = format_multi_child_summary(child_summaries)
+    summary = format_multi_child_summary(args.mode, child_summaries)
 
     # Preview or send
     if os.getenv('PREVIEW_ONLY') == 'true':
-        print("Preview Only mode enabled - not sending any email"
+        print("Preview Only mode enabled - not sending any email")
         print(summary)
     else:
         for email in EMAIL_TO:
-            send_email(summary, email)
+            send_email(summary, email, args.mode)
 
 
 if __name__ == '__main__':

@@ -34,16 +34,10 @@ URL='https://app.schoology.com'
 SESSION = requests.Session()
 
 
-def get_tomorrow_range():
-    tomorrow = datetime.now() + timedelta(days=1)
-    start = datetime(tomorrow.year, tomorrow.month, tomorrow.day, 0, 0, 0)
-    end = start + timedelta(days=1)
-    return int(start.timestamp()), int(end.timestamp())
-
 def parse_args():
     parser = argparse.ArgumentParser(description="Schoology summary emailer")
-    parser.add_argument('--mode', choices=['weekly', 'tomorrow'], default='weekly',
-                        help='Choose summary mode: weekly or tomorrow')
+    parser.add_argument('--mode', choices=['weekly', 'tomorrow', 'today'], default='weekly',
+                        help='Choose summary mode: weekly, tomorrow, or today')
     return parser.parse_args()
 
 
@@ -71,6 +65,12 @@ def switch_child(child_data):
     response = SESSION.get(f'{URL}/parent/switch_child/{child_id}')
     if response.ok:
         print(f'Switched child to: {child_name}')
+
+def get_day_range(offset):
+    day = datetime.now() + timedelta(days=offset)
+    start = datetime(day.year, day.month, day.day, 0, 0, 0)
+    end = start + timedelta(days=1)
+    return int(start.timestamp()), int(end.timestamp())
 
 def get_this_week_range():
     today = datetime.now()
@@ -158,8 +158,10 @@ def main():
 
         if args.mode == 'weekly':
             start, end = get_next_week_range()
-        else:
-            start, end = get_tomorrow_range()
+        elif args.mode == 'today':
+            start, end = get_day_range(0)
+        elif args.mode == 'tomorrow':
+            start, end = get_day_range(1)
 
         events = get_calendar(start, end)
         child_summaries[child_name] = events

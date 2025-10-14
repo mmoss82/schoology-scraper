@@ -19,7 +19,9 @@ import smtplib
 from email.mime.text import MIMEText
 import json
 import argparse
+import logging
 
+logger = logging.getLogger(__name__)
 load_dotenv()
 
 EMAIL_USER = os.getenv('EMAIL_USER')
@@ -57,14 +59,14 @@ def login():
     login_response = SESSION.post(LOGIN_URL, data=payload, allow_redirects=True)
 
     if login_response.ok:
-        print("Login successful")
+        logger.info("Login successful")
 
 def switch_child(child_data):
     child_name = child_data['name']
     child_id = child_data['id']
     response = SESSION.get(f'{URL}/parent/switch_child/{child_id}')
     if response.ok:
-        print(f'Switched child to: {child_name}')
+        logger.info(f'Switched child to: {child_name}')
 
 def get_day_range(offset):
     day = datetime.now() + timedelta(days=offset)
@@ -147,6 +149,9 @@ def send_email(body, email, mode):
 
 
 def main():
+    logging.basicConfig(level=logging.INFO, format='%(asctime)s %(message)s', datefmt='%m/%d/%Y %I:%M:%S %p')
+    logger.info('Starting scraper')
+
     args = parse_args()
     login()
 
@@ -170,11 +175,13 @@ def main():
 
     # Preview or send
     if os.getenv('PREVIEW_ONLY') == 'true':
-        print("Preview Only mode enabled - not sending any email")
-        print(summary)
+        logger.info("Preview Only mode enabled - not sending any email")
+        logger.info(summary)
     else:
         for email in EMAIL_TO:
             send_email(summary, email, args.mode)
+
+    logger.info('Finished')
 
 
 if __name__ == '__main__':

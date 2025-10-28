@@ -60,6 +60,9 @@ def login():
 
     if login_response.ok:
         logger.info("Login successful")
+    else:
+        logger.error("Login failed")
+        logger.error(login_response.text)
 
 def switch_child(child_data):
     child_name = child_data['name']
@@ -67,6 +70,9 @@ def switch_child(child_data):
     response = SESSION.get(f'{URL}/parent/switch_child/{child_id}')
     if response.ok:
         logger.info(f'Switched child to: {child_name}')
+    else:
+        logger.error(f'Unable to switch to: {child_name}')
+        logger.error(response.text)
 
 def get_day_range(offset):
     day = datetime.now() + timedelta(days=offset)
@@ -143,9 +149,20 @@ def send_email(body, email, mode):
     msg['From'] = EMAIL_USER
     msg['To'] = email
 
-    with smtplib.SMTP_SSL('smtp.gmail.com', 465) as server:
-        server.login(EMAIL_USER, EMAIL_PASS)
-        server.send_message(msg)
+    try:
+        with smtplib.SMTP_SSL('smtp.gmail.com', 465, timeout=30) as server:
+            server.login(EMAIL_USER, EMAIL_PASS)
+            server.send_message(msg)
+            logger.info(f'Email sent successfully to {email}')
+    except smtplib.SMTPAuthenticationError as e:
+        logger.error(f'Email authentication failed for {email}: {e}')
+        raise  # Re-raise so the script fails and you know about it
+    except smtplib.SMTPException as e:
+        logger.error(f'SMTP error sending to {email}: {e}')
+        raise
+    except Exception as e:
+        logger.error(f'Unexpected error sending email to {email}: {e}')
+        raise
 
 
 def main():
@@ -178,8 +195,15 @@ def main():
         logger.info("Preview Only mode enabled - not sending any email")
         logger.info(summary)
     else:
+        failed = []
         for email in EMAIL_TO:
-            send_email(summary, email, args.mode)
+            if not send_email(summary, email, args.mode):
+                failed.append(email)
+
+        if failed:
+            logger.error(f'Failed to send to: {", ".join(failed)}')
+            sys.exit(1)
+
 
     logger.info('Finished')
 

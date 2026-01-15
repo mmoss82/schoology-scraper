@@ -11,7 +11,7 @@ Version: 1.0.0
 import requests
 import os
 import sys
-from datetime import datetime, timedelta
+from datetime import datetime
 from bs4 import BeautifulSoup
 import html
 from dotenv import load_dotenv
@@ -39,8 +39,8 @@ SESSION = requests.Session()
 
 def parse_args():
     parser = argparse.ArgumentParser(description="Schoology summary emailer")
-    parser.add_argument('--mode', choices=['weekly', 'tomorrow', 'today'], default='weekly',
-                        help='Choose summary mode: weekly, tomorrow, or today')
+    parser.add_argument('--label', default='Schoology Summary',
+                        help='Optional label used as the email subject/header (no filtering is applied)')
     return parser.parse_args()
 
 
@@ -74,53 +74,6 @@ def switch_child(child_data):
         logger.error(f'Unable to switch to: {child_name}')
         logger.error(response.text)
 
-def get_day_range(offset):
-    day = datetime.now() + timedelta(days=offset)
-    start = datetime(day.year, day.month, day.day, 0, 0, 0)
-    end = start + timedelta(days=1)
-    return int(start.timestamp()), int(end.timestamp())
-
-def get_this_week_range():
-    today = datetime.now()
-    start_of_week = today - timedelta(days=today.weekday())  # Monday
-    end_of_week = start_of_week + timedelta(days=6)          # Sunday
-
-    start_ts = int(start_of_week.timestamp())
-    end_ts = int(end_of_week.timestamp())
-
-    return start_ts, end_ts
-
-def get_next_week_range():
-    today = datetime.now()
-    start_of_next_week = today + timedelta(days=(7 - today.weekday()))
-    end_of_next_week = start_of_next_week + timedelta(days=6)
-
-    start_ts = int(start_of_next_week.timestamp())
-    end_ts = int(end_of_next_week.timestamp())
-
-    return start_ts, end_ts
-
-def get_calendar(start, end):
-    r = SESSION.get(f'{URL}/parent/calendar?ajax=1&start={start}&end={end}')
-
-    parsed = []
-    for item in r.json():
-        title = html.unescape(item.get('titleText', ''))
-        start = html.unescape(item.get('start'))
-        course = html.unescape(item.get('content_title'))
-        body_html = item.get('body', '')
-        body_text = html.unescape(BeautifulSoup(body_html, 'html.parser').get_text(separator='\n').strip())
-        event_type = item.get('e_type')
-
-        parsed.append({
-            'title': title,
-            'start': datetime.strptime(start, '%Y-%m-%d %H:%M:%S'),
-            'course': course,
-            'type': event_type,
-            'description': body_text
-        })
-
-    return parsed
 
 def fetch_schoology_tasks():
     """
@@ -149,7 +102,12 @@ def fetch_schoology_tasks():
 
         # Walk forward through siblings until the next header
         el = header.find_next_sibling()
-        while el and "upcoming-event" in el.get("class", []):
+        # el.get('class') returns a list-like AttributeValueList; get it once and check membership
+        while el:
+            classes = el.get('class')
+            if not classes or 'upcoming-event' not in classes:
+                break
+
             # Extract fields
             title_el = el.select_one("a")
             course_el = el.select_one(".course-title")
@@ -172,7 +130,10 @@ def fetch_schoology_tasks():
             else:
                 abs_url = raw_url
 
-            results.setdefault(category, []).append({
+            if category not in results:
+                results[category] = []
+
+            results[category].append({
                 "title": title_el.get_text(strip=True) if title_el else None,
                 "url": abs_url,
                 "course": course_el.get_text(strip=True) if course_el else None,
@@ -186,7 +147,7 @@ def fetch_schoology_tasks():
 
     return results
 
-def format_multi_child_summary(mode, child_summaries):
+def format_multi_child_summary(child_summaries, title="Schoology Summary"):
     """
     Render a summary that includes overdue_submissions, upcoming_submissions,
     and upcoming_events for each child.
@@ -197,10 +158,10 @@ def format_multi_child_summary(mode, child_summaries):
     text_lines = []
     html_lines = []
 
-    text_lines.append(f"{mode.capitalize()} Schoology Summary\n")
+    text_lines.append(f"{title}\n")
     text_lines.append("Full details below.\n")
 
-    html_lines.append(f"<h2>{mode.capitalize()} Schoology Summary</h2>")
+    html_lines.append(f"<h2>{html.escape(title)}</h2>")
     html_lines.append("<p>Full details below.</p>")
 
     for child_name, tasks in child_summaries.items():
@@ -318,14 +279,13 @@ def format_multi_child_summary(mode, child_summaries):
 
     return text_summary, html_summary
 
-def send_email(text_body, html_body, email, mode):
+def send_email(text_body, html_body, email, subject):
     """
     Send a multipart/alternative email with both plain text and HTML.
     HTML uses short clickable '🔗' anchors for URLs.
     """
     msg = MIMEMultipart('alternative')
-    mode_fmt = mode.capitalize()
-    msg['Subject'] = f'{mode_fmt} Schoology Summary'
+    msg['Subject'] = subject
     msg['From'] = EMAIL_USER
     msg['To'] = email
 
@@ -368,7 +328,11 @@ def main():
         tasks = fetch_schoology_tasks()
         child_summaries[child_name] = tasks
 
-    text_summary, html_summary = format_multi_child_summary(args.mode, child_summaries)
+    label = args.label
+    text_summary, html_summary = format_multi_child_summary(child_summaries, title=label)
+
+    # build a subject once and pass it to send_email
+    subject = label
 
     # Preview or send
     if os.getenv('PREVIEW_ONLY') == 'true':
@@ -377,7 +341,7 @@ def main():
     else:
         failed = []
         for email in EMAIL_TO:
-            if not send_email(text_summary, html_summary, email, args.mode):
+            if not send_email(text_summary, html_summary, email, subject):
                 failed.append(email)
 
         if failed:

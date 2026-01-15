@@ -209,3 +209,6 @@ __marimo__/
 # vscode
 .vs
 *.pyproj
+
+# pycharm
+.idea
